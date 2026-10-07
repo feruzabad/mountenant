@@ -3,7 +3,7 @@ package sabdav
 import (
 	"net/url"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // Profile captures what differs between products that speak the SABnzbd API

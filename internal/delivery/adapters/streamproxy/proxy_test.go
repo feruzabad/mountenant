@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 type fakeOpener struct {

@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // sabResponse covers the fields Mountenant reads from SABnzbd API responses.

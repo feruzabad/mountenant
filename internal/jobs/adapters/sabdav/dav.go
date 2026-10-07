@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 type davEntry struct {

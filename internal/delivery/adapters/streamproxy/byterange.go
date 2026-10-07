@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // rangeDecision is the outcome of evaluating a request's Range headers

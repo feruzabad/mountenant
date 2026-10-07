@@ -33,9 +33,9 @@ import (
 	"testing"
 	"time"
 
-	"mountenant/internal/delivery/adapters/streamproxy"
-	"mountenant/internal/jobs/adapters/sabdav"
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/delivery/adapters/streamproxy"
+	"github.com/feruzabad/mountenant/internal/jobs/adapters/sabdav"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 func uuid() string {

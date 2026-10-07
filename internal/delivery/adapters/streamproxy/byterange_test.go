@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 func TestResolveRange(t *testing.T) {

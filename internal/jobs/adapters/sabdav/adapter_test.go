@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // fakeBackend imitates one product closely enough to exercise the profile

@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // Config is the backend section of Mountenant's configuration.

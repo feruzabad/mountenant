@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // File is a catalogued job file, as stored by Mountenant.
