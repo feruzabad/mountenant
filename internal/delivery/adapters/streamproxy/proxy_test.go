@@ -127,7 +127,7 @@ func TestServeHeaders(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.Serve(rec, httptest.NewRequest(http.MethodGet, "/dl/x", nil), f)
 	h := rec.Header()
-	if h.Get("Content-Type") != "application/x-iso9660-image" && h.Get("Content-Type") != "application/octet-stream" {
+	if h.Get("Content-Type") != "application/x-iso9660-image" {
 		t.Errorf("Content-Type %q", h.Get("Content-Type"))
 	}
 	if !strings.Contains(h.Get("Content-Disposition"), "debian netinst.iso") {

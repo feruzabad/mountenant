@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/feruzabad/mountenant/internal/jobs/domain"
+	"github.com/feruzabad/mountenant/internal/platform/contenttype"
 )
 
 // File is a catalogued job file, as stored by Mountenant.
@@ -71,7 +72,7 @@ func (p *Proxy) Serve(w http.ResponseWriter, r *http.Request, f File) {
 	h.Set("Accept-Ranges", "bytes")
 	h.Set("ETag", etag)
 	h.Set("Last-Modified", f.ReadyAt.UTC().Format(http.TimeFormat))
-	h.Set("Content-Type", contentType(f.RelPath))
+	h.Set("Content-Type", contenttype.ForPath(f.RelPath))
 	h.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": path.Base(f.RelPath)}))
 	h.Set("Cache-Control", "private, no-store")
 
@@ -184,9 +185,3 @@ func (p *Proxy) log() *slog.Logger {
 	return slog.Default()
 }
 
-func contentType(relPath string) string {
-	if t := mime.TypeByExtension(path.Ext(relPath)); t != "" {
-		return t
-	}
-	return "application/octet-stream"
-}
