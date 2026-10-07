@@ -14,7 +14,9 @@ import (
 	"github.com/feruzabad/mountenant/internal/http/middleware"
 	"github.com/feruzabad/mountenant/internal/http/problem"
 	identityapp "github.com/feruzabad/mountenant/internal/identity/app"
-	"github.com/feruzabad/mountenant/internal/identity/domain"
+	identity "github.com/feruzabad/mountenant/internal/identity/domain"
+	jobsapp "github.com/feruzabad/mountenant/internal/jobs/app"
+	"github.com/feruzabad/mountenant/internal/jobs/domain"
 )
 
 // Usage is what UC-03 reports next to the quota.
@@ -27,14 +29,18 @@ type Usage struct {
 
 // UsageReader supplies a user's current usage.
 type UsageReader interface {
-	Usage(ctx context.Context, user domain.UserID) (Usage, error)
+	Usage(ctx context.Context, user identity.UserID) (Usage, error)
 }
 
 // Server implements api.StrictServerInterface.
 type Server struct {
-	Auth   *identityapp.Auth
-	Usage  UsageReader
-	Policy domain.SessionPolicy
+	Auth  *identityapp.Auth
+	Jobs  Jobs
+	Usage UsageReader
+	// MaxUploadBytes bounds the multipart body of POST /api/v1/jobs: the NZB
+	// hard cap plus room for multipart framing.
+	MaxUploadBytes int64
+	Policy         identity.SessionPolicy
 	// PublicOrigin is the configured public URL without trailing slash; the
 	// Origin of unsafe requests must equal it (spec §7.3).
 	PublicOrigin string
@@ -77,9 +83,20 @@ func (b badRequest) Error() string { return string(b) }
 func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 	var rl *identityapp.RateLimitedError
 	var br badRequest
+	var tooBig *http.MaxBytesError
 	switch {
 	case errors.As(err, &br):
 		problem.Write(w, http.StatusBadRequest, problem.BadRequest, "Bad request", string(br))
+	case errors.Is(err, domain.ErrInvalidNZB):
+		problem.Write(w, http.StatusBadRequest, problem.InvalidNZB, "Invalid NZB", strings.TrimPrefix(err.Error(), domain.ErrInvalidNZB.Error()+": "))
+	case errors.Is(err, domain.ErrNZBTooLarge), errors.As(err, &tooBig):
+		problem.Write(w, http.StatusRequestEntityTooLarge, problem.NZBTooLarge, "NZB too large", "")
+	case errors.Is(err, domain.ErrQuotaExceeded):
+		problem.Write(w, http.StatusUnprocessableEntity, problem.QuotaExceeded, "Job limit reached", "Delete a job or wait until one finishes.")
+	case errors.Is(err, jobsapp.ErrNotFound):
+		problem.Write(w, http.StatusNotFound, problem.NotFound, "Not found", "")
+	case errors.Is(err, domain.ErrBadCursor):
+		problem.Write(w, http.StatusBadRequest, problem.BadRequest, "Bad request", "invalid cursor")
 	case errors.Is(err, identityapp.ErrInvalidCredentials):
 		problem.Write(w, http.StatusUnauthorized, problem.Unauthenticated, "Invalid username or password", "")
 	case errors.Is(err, identityapp.ErrUnauthenticated):

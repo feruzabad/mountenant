@@ -37,8 +37,9 @@ func (fixedUsage) Usage(context.Context, domain.UserID) (Usage, error) {
 }
 
 type env struct {
-	h   http.Handler
-	sec *secLog
+	h    http.Handler
+	sec  *secLog
+	jobs *fakeJobs
 }
 
 func newEnv(t *testing.T, loginPerMinute int) *env {
@@ -72,8 +73,9 @@ func newEnv(t *testing.T, loginPerMinute int) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{Auth: auth, Usage: fixedUsage{}, Policy: policy, PublicOrigin: origin + "/", Security: sec, Logger: log}
-	return &env{h: s.Handler(), sec: sec}
+	jobs := &fakeJobs{}
+	s := &Server{Auth: auth, Jobs: jobs, Usage: fixedUsage{}, MaxUploadBytes: 1 << 20, Policy: policy, PublicOrigin: origin + "/", Security: sec, Logger: log}
+	return &env{h: s.Handler(), sec: sec, jobs: jobs}
 }
 
 type req struct {

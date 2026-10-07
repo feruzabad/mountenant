@@ -21,6 +21,7 @@ servers:
 tags:
   - name: auth
   - name: account
+  - name: jobs
   - name: ops
     description: Operational endpoints, served outside the generated router.
 paths:
@@ -102,6 +103,124 @@ paths:
                 $ref: "#/components/schemas/Me"
         "401":
           $ref: "#/components/responses/Problem"
+  /api/v1/jobs:
+    post:
+      tags: [jobs]
+      operationId: submitJob
+      summary: Submit an NZB (UC-10)
+      description: |
+        Uploads one `.nzb` or `.nzb.gz` (gzip is detected by content). The
+        same NZB uploaded again while its job is queued, importing or ready
+        returns that job with `duplicate: true` and status 200.
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [nzb]
+              properties:
+                nzb:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Job created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmittedJob"
+        "200":
+          description: Duplicate of an existing job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmittedJob"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "413":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      summary: List my jobs, newest first (UC-11)
+      security:
+        - session: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/JobStatus"
+      responses:
+        "200":
+          description: One page of jobs.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobPage"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /api/v1/jobs/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Job detail with files (UC-12)
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+    delete:
+      tags: [jobs]
+      operationId: deleteJob
+      summary: Delete a job (UC-13)
+      description: The job disappears at once; backend removal follows asynchronously.
+      security:
+        - session: []
+      responses:
+        "202":
+          description: Deletion accepted.
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
   /healthz:
     get:
       tags: [ops]
@@ -150,6 +269,75 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    JobStatus:
+      type: string
+      enum: [queued, importing, ready, failed]
+    Job:
+      type: object
+      required: [id, name, status, createdAt, expiresAt, files]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Sanitised name of the uploaded file.
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        failure:
+          $ref: "#/components/schemas/JobFailure"
+        createdAt:
+          type: string
+          format: date-time
+        readyAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        files:
+          type: array
+          description: Empty unless the job is ready.
+          items:
+            $ref: "#/components/schemas/JobFile"
+    JobFailure:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: backend_failed, backend_rejected, import_timeout, backend_content_missing or too_many_files.
+        message:
+          type: string
+    JobFile:
+      type: object
+      required: [path, size, contentType]
+      properties:
+        path:
+          type: string
+          description: Relative path inside the job, slash-separated.
+        size:
+          type: integer
+          format: int64
+        contentType:
+          type: string
+    SubmittedJob:
+      type: object
+      required: [job, duplicate]
+      properties:
+        job:
+          $ref: "#/components/schemas/Job"
+        duplicate:
+          type: boolean
+    JobPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+        nextCursor:
+          type: string
     LoginRequest:
       type: object
       additionalProperties: false

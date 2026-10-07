@@ -9,9 +9,39 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"mime/multipart"
 	"net/http"
+	"time"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
+
+// Defines values for JobStatus.
+const (
+	Failed    JobStatus = "failed"
+	Importing JobStatus = "importing"
+	Queued    JobStatus = "queued"
+	Ready     JobStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the JobStatus enum.
+func (e JobStatus) Valid() bool {
+	switch e {
+	case Failed:
+		return true
+	case Importing:
+		return true
+	case Queued:
+		return true
+	case Ready:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for ProblemCode.
 const (
@@ -75,6 +105,47 @@ type CsrfToken struct {
 	Token string `json:"token"`
 }
 
+// Job defines model for Job.
+type Job struct {
+	CreatedAt time.Time   `json:"createdAt"`
+	ExpiresAt time.Time   `json:"expiresAt"`
+	Failure   *JobFailure `json:"failure,omitempty"`
+
+	// Files Empty unless the job is ready.
+	Files []JobFile `json:"files"`
+	Id    string    `json:"id"`
+
+	// Name Sanitised name of the uploaded file.
+	Name    string     `json:"name"`
+	ReadyAt *time.Time `json:"readyAt,omitempty"`
+	Status  JobStatus  `json:"status"`
+}
+
+// JobFailure defines model for JobFailure.
+type JobFailure struct {
+	// Code backend_failed, backend_rejected, import_timeout, backend_content_missing or too_many_files.
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// JobFile defines model for JobFile.
+type JobFile struct {
+	ContentType string `json:"contentType"`
+
+	// Path Relative path inside the job, slash-separated.
+	Path string `json:"path"`
+	Size int64  `json:"size"`
+}
+
+// JobPage defines model for JobPage.
+type JobPage struct {
+	Items      []Job   `json:"items"`
+	NextCursor *string `json:"nextCursor,omitempty"`
+}
+
+// JobStatus defines model for JobStatus.
+type JobStatus string
+
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
 	Password string `json:"password"`
@@ -111,6 +182,12 @@ type Quota struct {
 	MaxTotalJobs           int   `json:"maxTotalJobs"`
 }
 
+// SubmittedJob defines model for SubmittedJob.
+type SubmittedJob struct {
+	Duplicate bool `json:"duplicate"`
+	Job       Job  `json:"job"`
+}
+
 // Usage defines model for Usage.
 type Usage struct {
 	ActiveDownloads      int   `json:"activeDownloads"`
@@ -122,8 +199,23 @@ type Usage struct {
 // RateLimited defines model for RateLimited.
 type RateLimited = Problem
 
+// ListJobsParams defines parameters for ListJobs.
+type ListJobsParams struct {
+	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Status *JobStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// SubmitJobMultipartBody defines parameters for SubmitJob.
+type SubmitJobMultipartBody struct {
+	Nzb openapi_types.File `json:"nzb"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
+
+// SubmitJobMultipartRequestBody defines body for SubmitJob for multipart/form-data ContentType.
+type SubmitJobMultipartRequestBody SubmitJobMultipartBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -136,6 +228,18 @@ type ServerInterface interface {
 	// GetCsrfToken Get the CSRF token bound to the session
 	// (GET /api/v1/csrf)
 	GetCsrfToken(w http.ResponseWriter, r *http.Request)
+	// ListJobs List my jobs, newest first (UC-11)
+	// (GET /api/v1/jobs)
+	ListJobs(w http.ResponseWriter, r *http.Request, params ListJobsParams)
+	// SubmitJob Submit an NZB (UC-10)
+	// (POST /api/v1/jobs)
+	SubmitJob(w http.ResponseWriter, r *http.Request)
+	// DeleteJob Delete a job (UC-13)
+	// (DELETE /api/v1/jobs/{jobId})
+	DeleteJob(w http.ResponseWriter, r *http.Request, jobId string)
+	// GetJob Job detail with files (UC-12)
+	// (GET /api/v1/jobs/{jobId})
+	GetJob(w http.ResponseWriter, r *http.Request, jobId string)
 	// GetMe Current user, quota and usage (UC-03)
 	// (GET /api/v1/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -183,6 +287,131 @@ func (siw *ServerInterfaceWrapper) GetCsrfToken(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCsrfToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListJobs operation middleware
+func (siw *ServerInterfaceWrapper) ListJobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListJobsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListJobs(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitJob operation middleware
+func (siw *ServerInterfaceWrapper) SubmitJob(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitJob(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteJob operation middleware
+func (siw *ServerInterfaceWrapper) DeleteJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "jobId" -------------
+	var jobId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "jobId", r.PathValue("jobId"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "jobId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteJob(w, r, jobId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetJob operation middleware
+func (siw *ServerInterfaceWrapper) GetJob(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "jobId" -------------
+	var jobId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "jobId", r.PathValue("jobId"), &jobId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "jobId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetJob(w, r, jobId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -330,6 +559,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/csrf", wrapper.GetCsrfToken)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetMe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/jobs", wrapper.ListJobs)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/jobs", wrapper.SubmitJob)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/jobs/{jobId}", wrapper.DeleteJob)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/jobs/{jobId}", wrapper.GetJob)
 
 	return m
 }
@@ -522,6 +755,278 @@ func (response GetCsrfToken401ApplicationProblemPlusJSONResponse) VisitGetCsrfTo
 	return err
 }
 
+type ListJobsRequestObject struct {
+	Params ListJobsParams
+}
+
+type ListJobsResponseObject interface {
+	VisitListJobsResponse(w http.ResponseWriter) error
+}
+
+type ListJobs200JSONResponse JobPage
+
+func (response ListJobs200JSONResponse) VisitListJobsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListJobs400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ListJobs400ApplicationProblemPlusJSONResponse) VisitListJobsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListJobs401ApplicationProblemPlusJSONResponse Problem
+
+func (response ListJobs401ApplicationProblemPlusJSONResponse) VisitListJobsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJobRequestObject struct {
+	Body *multipart.Reader
+}
+
+type SubmitJobResponseObject interface {
+	VisitSubmitJobResponse(w http.ResponseWriter) error
+}
+
+type SubmitJob200JSONResponse SubmittedJob
+
+func (response SubmitJob200JSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJob201JSONResponse SubmittedJob
+
+func (response SubmitJob201JSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJob400ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response SubmitJob400ApplicationProblemPlusJSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJob401ApplicationProblemPlusJSONResponse Problem
+
+func (response SubmitJob401ApplicationProblemPlusJSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJob403ApplicationProblemPlusJSONResponse Problem
+
+func (response SubmitJob403ApplicationProblemPlusJSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJob413ApplicationProblemPlusJSONResponse Problem
+
+func (response SubmitJob413ApplicationProblemPlusJSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(413)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitJob422ApplicationProblemPlusJSONResponse Problem
+
+func (response SubmitJob422ApplicationProblemPlusJSONResponse) VisitSubmitJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteJobRequestObject struct {
+	JobId string `json:"jobId"`
+}
+
+type DeleteJobResponseObject interface {
+	VisitDeleteJobResponse(w http.ResponseWriter) error
+}
+
+type DeleteJob202Response struct {
+}
+
+func (response DeleteJob202Response) VisitDeleteJobResponse(w http.ResponseWriter) error {
+	w.WriteHeader(202)
+	return nil
+}
+
+type DeleteJob401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response DeleteJob401ApplicationProblemPlusJSONResponse) VisitDeleteJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteJob403ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteJob403ApplicationProblemPlusJSONResponse) VisitDeleteJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteJob404ApplicationProblemPlusJSONResponse Problem
+
+func (response DeleteJob404ApplicationProblemPlusJSONResponse) VisitDeleteJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJobRequestObject struct {
+	JobId string `json:"jobId"`
+}
+
+type GetJobResponseObject interface {
+	VisitGetJobResponse(w http.ResponseWriter) error
+}
+
+type GetJob200JSONResponse Job
+
+func (response GetJob200JSONResponse) VisitGetJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJob401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetJob401ApplicationProblemPlusJSONResponse) VisitGetJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetJob404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetJob404ApplicationProblemPlusJSONResponse) VisitGetJobResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -570,6 +1075,18 @@ type StrictServerInterface interface {
 	// GetCsrfToken Get the CSRF token bound to the session
 	// (GET /api/v1/csrf)
 	GetCsrfToken(ctx context.Context, request GetCsrfTokenRequestObject) (GetCsrfTokenResponseObject, error)
+	// ListJobs List my jobs, newest first (UC-11)
+	// (GET /api/v1/jobs)
+	ListJobs(ctx context.Context, request ListJobsRequestObject) (ListJobsResponseObject, error)
+	// SubmitJob Submit an NZB (UC-10)
+	// (POST /api/v1/jobs)
+	SubmitJob(ctx context.Context, request SubmitJobRequestObject) (SubmitJobResponseObject, error)
+	// DeleteJob Delete a job (UC-13)
+	// (DELETE /api/v1/jobs/{jobId})
+	DeleteJob(ctx context.Context, request DeleteJobRequestObject) (DeleteJobResponseObject, error)
+	// GetJob Job detail with files (UC-12)
+	// (GET /api/v1/jobs/{jobId})
+	GetJob(ctx context.Context, request GetJobRequestObject) (GetJobResponseObject, error)
 	// GetMe Current user, quota and usage (UC-03)
 	// (GET /api/v1/me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -686,6 +1203,115 @@ func (sh *strictHandler) GetCsrfToken(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetCsrfTokenResponseObject); ok {
 		if err := validResponse.VisitGetCsrfTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListJobs operation middleware
+func (sh *strictHandler) ListJobs(w http.ResponseWriter, r *http.Request, params ListJobsParams) {
+	var request ListJobsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListJobs(ctx, request.(ListJobsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListJobs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListJobsResponseObject); ok {
+		if err := validResponse.VisitListJobsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitJob operation middleware
+func (sh *strictHandler) SubmitJob(w http.ResponseWriter, r *http.Request) {
+	var request SubmitJobRequestObject
+
+	if reader, err := r.MultipartReader(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
+		return
+	} else {
+		request.Body = reader
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitJob(ctx, request.(SubmitJobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitJob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitJobResponseObject); ok {
+		if err := validResponse.VisitSubmitJobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteJob operation middleware
+func (sh *strictHandler) DeleteJob(w http.ResponseWriter, r *http.Request, jobId string) {
+	var request DeleteJobRequestObject
+
+	request.JobId = jobId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteJob(ctx, request.(DeleteJobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteJob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteJobResponseObject); ok {
+		if err := validResponse.VisitDeleteJobResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetJob operation middleware
+func (sh *strictHandler) GetJob(w http.ResponseWriter, r *http.Request, jobId string) {
+	var request GetJobRequestObject
+
+	request.JobId = jobId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetJob(ctx, request.(GetJobRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetJob")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetJobResponseObject); ok {
+		if err := validResponse.VisitGetJobResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -72,7 +72,11 @@ func isSafe(method string) bool {
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
+		limit := int64(maxJSONBody)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/jobs" {
+			limit = s.MaxUploadBytes
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		ctx := r.Context()
 		if c, err := r.Cookie(SessionCookie); err == nil {
 			ctx = context.WithValue(ctx, cookieKey, c.Value)
