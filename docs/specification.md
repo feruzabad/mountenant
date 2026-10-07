@@ -94,7 +94,7 @@ The domain splits into three bounded contexts; Jobs is the core domain, Identity
 - `UserID` (value object): UUIDv7, immutable.
 - `Username` (value object): 3–32 chars, `[a-z0-9_.-]`, case-insensitive unique.
 - `PasswordHash` (value object): PHC-format argon2id string.
-- `Quota` (value object): `MaxActiveJobs`, `MaxTotalJobs`, `MaxNZBBytes`, `MaxDownloadBytesPerDay`, `MaxConcurrentDownloads`.
+- `Quota` (value object): `MaxActiveJobs` (jobs the backend is still working on: Queued and Importing), `MaxTotalJobs` (every job that is not Deleted, Failed included), `MaxNZBBytes`, `MaxDownloadBytesPerDay`, `MaxConcurrentDownloads`.
 - `Disabled` flag; `ConfigVersion` (hash of the config entry it was last synced from).
 - Invariants: username unique; a disabled user cannot authenticate and all their sessions are revoked.
 
@@ -211,7 +211,7 @@ The API is JSON over HTTPS, versioned under `/api/v1`, and specified contract-fi
 - Timestamps are RFC 3339 UTC; IDs are UUIDv7 strings.
 - Pagination is cursor-based: `?limit=&cursor=`, response carries `nextCursor`.
 - Mutating requests require the session cookie plus a CSRF token header (Section 7).
-- `Idempotency-Key` header is accepted on `POST /jobs`; the NZB digest gives natural idempotency as a second line.
+- `POST /jobs` is idempotent through the NZB digest: repeating an upload returns the existing job (UC-10). An `Idempotency-Key` header is not needed and not stored in v1.
 - Rate limit responses use 429 with `Retry-After`; `RateLimit` headers follow the IETF draft.
 
 ### 6.2 Endpoints
@@ -409,7 +409,9 @@ SQLite holds only metadata (users, sessions, jobs, file catalogue, usage); conte
 | `usage_daily` | `user_id`, `day`, `bytes_served` | PK (`user_id`, `day`) |
 | `nzb_blobs` | `job_id` PK, `content` BLOB | Optional; keeps the NZB until the backend confirms acceptance, enabling retries; deleted on acceptance, or when the job turns Failed or Deleted (UC-17) |
 
-- Times stored as UTC RFC 3339 text or Unix milliseconds (pick one, consistently).
+`jobs` also carries the reconciler's bookkeeping (migration 00002): `next_check_at` (when the job is next due: status poll, ready re-check, submit retry or backend cleanup), `attempts` (consecutive failed backend calls, for backoff and alerting), `backend_removed_at` (when `VerifyGone` confirmed the cleanup of a Deleted job) and `version` (optimistic concurrency between user actions and the reconciler).
+
+- Times are stored as Unix milliseconds (ADR 0007).
 - `status` stored as text with a CHECK constraint listing allowed values.
 - Domain events are written to `job_events` in the same transaction as the state change (transactional outbox), then dispatched; this keeps SSE consistent with the database.
 
