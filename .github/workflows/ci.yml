@@ -26,7 +26,21 @@ jobs:
         with:
           version: latest
       - name: test
-        run: go test -race ./...
+        # Failing tests are also reported as annotations, so their output is
+        # visible without access to the job log.
+        run: |
+          set +e
+          go test -race -json ./... > test.json
+          status=$?
+          jq -r 'select(.Action == "output") | .Output' test.json | grep -v '^=== \|^--- PASS\|^PASS$\|^ok ' || true
+          jq -r -s '
+            group_by(.Package + " " + (.Test // ""))
+            | map(select(any(.[]; .Action == "fail")))
+            | .[]
+            | "::error title=\(.[0].Package) \(.[0].Test // "(package)")::"
+              + ([.[] | select(.Action == "output") | .Output] | join("") | gsub("%"; "%25") | gsub("\r"; "%0D") | gsub("\n"; "%0A"))
+          ' test.json
+          exit $status
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: build
