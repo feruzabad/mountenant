@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -194,6 +195,23 @@ func TestServe(t *testing.T) {
 		}
 	}
 
+	// SIGHUP re-reads users.json (UC-04).
+	hash, _ := argon2id.Hasher{Params: argon2id.Params{MemoryKiB: 19456, Iterations: 1, Parallelism: 1}}.Hash(testPassword)
+	users, _ := json.Marshal([]map[string]any{{"username": "alice", "passwordHash": hash}, {"username": "bob", "passwordHash": hash}})
+	if err := os.WriteFile(filepath.Join(dir, "users.json"), users, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), `"configured":2,"created":1`) {
+		if time.Now().After(deadline) {
+			t.Fatalf("users not re-synced after SIGHUP:\n%s", out.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
 	cancel()
 	select {
 	case code := <-done:
@@ -210,7 +228,7 @@ func TestServe(t *testing.T) {
 			t.Errorf("secret %q in logs", s)
 		}
 	}
-	for _, s := range []string{`"msg":"starting"`, `"msg":"listening"`, `"msg":"stopped"`, `"REDACTED"`} {
+	for _, s := range []string{`"msg":"starting"`, `"msg":"listening"`, `"msg":"stopped"`, `"REDACTED"`, `"msg":"users synced","configured":1,"created":1`} {
 		if !strings.Contains(logs, s) {
 			t.Errorf("logs lack %s:\n%s", s, logs)
 		}

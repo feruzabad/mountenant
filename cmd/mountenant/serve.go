@@ -13,9 +13,13 @@ import (
 	"time"
 
 	"github.com/feruzabad/mountenant/internal/http/health"
+	identitysqlite "github.com/feruzabad/mountenant/internal/identity/adapters/sqlite"
+	identityapp "github.com/feruzabad/mountenant/internal/identity/app"
 	"github.com/feruzabad/mountenant/internal/jobs/adapters/sabdav"
+	"github.com/feruzabad/mountenant/internal/platform/clock"
 	"github.com/feruzabad/mountenant/internal/platform/config"
 	"github.com/feruzabad/mountenant/internal/platform/db"
+	"github.com/feruzabad/mountenant/internal/platform/id"
 	"github.com/feruzabad/mountenant/internal/platform/logging"
 )
 
@@ -82,6 +86,25 @@ func serve(ctx context.Context, e env) error {
 		return err
 	}
 
+	clk := clock.System{}
+	store := identitysqlite.New(database)
+	userSync := &identityapp.UserSync{Users: store, Clock: clk, IDs: &id.UUIDv7{Clock: clk}}
+	syncUsers := func(l *config.Loaded) error {
+		users, err := configuredUsers(l)
+		if err != nil {
+			return err
+		}
+		res, err := userSync.Sync(ctx, users)
+		if err != nil {
+			return err
+		}
+		log.Info("users synced", "configured", len(users), "created", res.Created, "updated", res.Updated, "sessionsRevoked", res.Revoked)
+		return nil
+	}
+	if err := syncUsers(l); err != nil {
+		return err
+	}
+
 	backend, err := newBackend(cfg.Backend)
 	if err != nil {
 		return err
@@ -105,6 +128,10 @@ func serve(ctx context.Context, e env) error {
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Server.ListenAddr)
 	if err != nil {
 		return err
@@ -117,14 +144,16 @@ func serve(ctx context.Context, e env) error {
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
 
-	hup := make(chan os.Signal, 1)
-	signal.Notify(hup, syscall.SIGHUP)
-	defer signal.Stop(hup)
-
 	for {
 		select {
 		case <-hup:
-			// UC-04 (users sync) hooks in here with the identity slice.
+			// UC-04: users.json is re-read on SIGHUP. Other settings need a
+			// restart. An invalid file keeps the current users.
+			if nl, err := loadConfig(e); err != nil {
+				log.Error("reloading users failed; keeping current users", "err", err)
+			} else if err := syncUsers(nl); err != nil {
+				log.Error("user sync failed", "err", err)
+			}
 			if err := seclog.Reopen(); err != nil {
 				log.Error("reopening security log", "err", err)
 			} else {
