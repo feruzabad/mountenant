@@ -10,8 +10,8 @@
   },
   "backend": {
     "type": "altmount",
-    "apiUrl": "http://altmount:8080/sabnzbd/api",
-    "webdavUrl": "http://altmount:8080/webdav",
+    "apiUrl": "http://altmount:8080",
+    "webdavUrl": "http://altmount:8080",
     "webdavUser": "mountenant",
     "category": "mountenant"
   },

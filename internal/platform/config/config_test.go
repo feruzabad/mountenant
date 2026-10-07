@@ -23,9 +23,9 @@ func minimal() map[string]any {
 		"signing": map[string]any{"keys": []map[string]string{{"id": "k1", "secret": secret32}}},
 		"backend": map[string]any{
 			"type":           "altmount",
-			"apiUrl":         "http://backend:8080/sabnzbd/api",
+			"apiUrl":         "http://backend:8080",
 			"apiKey":         "key",
-			"webdavUrl":      "http://backend:8080/webdav",
+			"webdavUrl":      "http://backend:8080",
 			"webdavUser":     "dav",
 			"webdavPassword": "pw",
 		},
@@ -211,9 +211,9 @@ func validConfig() Config {
 	c.Server.TrustedProxies = []string{"127.0.0.1"}
 	c.Signing.Keys = []SigningKey{{ID: "k1", Secret: secret32}}
 	c.Backend.Type = "altmount"
-	c.Backend.APIURL = "http://backend:8080/sabnzbd/api"
+	c.Backend.APIURL = "http://backend:8080"
 	c.Backend.APIKey = "key"
-	c.Backend.WebDAVURL = "http://backend:8080/webdav"
+	c.Backend.WebDAVURL = "http://backend:8080"
 	c.Backend.WebDAVUser = "dav"
 	c.Backend.WebDAVPassword = "pw"
 	return c

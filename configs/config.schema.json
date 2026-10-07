@@ -87,9 +87,9 @@
       "additionalProperties": false,
       "properties": {
         "type": { "enum": ["altmount", "nzbdav"] },
-        "apiUrl": { "type": "string", "format": "uri", "description": "SABnzbd API endpoint, e.g. http://altmount:8080/sabnzbd/api or http://nzbdav:3000/api." },
+        "apiUrl": { "type": "string", "format": "uri", "description": "Base URL of the backend's SABnzbd API, without the API path (the profile adds /sabnzbd/api or /api), e.g. http://altmount:8080 or http://nzbdav:3000." },
         "apiKey": { "type": "string", "description": "Prefer MOUNTENANT_BACKEND_API_KEY_FILE." },
-        "webdavUrl": { "type": "string", "format": "uri", "description": "WebDAV root, e.g. http://altmount:8080/webdav or http://nzbdav:3000." },
+        "webdavUrl": { "type": "string", "format": "uri", "description": "Base URL of the backend's WebDAV server, without the content path (the profile adds /webdav/complete or /content), e.g. http://altmount:8080 or http://nzbdav:3000." },
         "webdavUser": { "type": "string" },
         "webdavPassword": { "type": "string", "description": "Prefer MOUNTENANT_BACKEND_WEBDAV_PASSWORD_FILE." },
         "category": { "type": "string", "pattern": "^[A-Za-z0-9-]+$", "default": "mountenant" },
