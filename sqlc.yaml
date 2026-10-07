@@ -10,3 +10,11 @@ sql:
         package: gen
         out: internal/identity/adapters/sqlite/gen
         emit_empty_slices: true
+  - engine: sqlite
+    schema: migrations
+    queries: internal/jobs/adapters/sqlite/queries.sql
+    gen:
+      go:
+        package: gen
+        out: internal/jobs/adapters/sqlite/gen
+        emit_empty_slices: true

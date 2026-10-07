@@ -109,6 +109,10 @@ type Job struct {
 	Attempts         int
 	BackendRemovedAt time.Time
 
+	// Version is the stored version this aggregate was loaded at; the
+	// repository rejects a save if the row changed meanwhile.
+	Version int64
+
 	events []Event
 }
 
