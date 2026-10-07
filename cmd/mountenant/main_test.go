@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -144,7 +145,16 @@ func fakeBackend(t *testing.T) *httptest.Server {
 		switch {
 		case r.URL.Path == "/sabnzbd/api" && r.URL.Query().Get("apikey") == testAPIKey:
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"version":"0.3.2"}`))
+			switch r.URL.Query().Get("mode") {
+			case "addfile":
+				w.Write([]byte(`{"status":true,"nzo_ids":["nzo-1"]}`))
+			case "queue":
+				w.Write([]byte(`{"queue":{"slots":[{"nzo_id":"nzo-1","filename":"x","cat":"mountenant","status":"Queued"}]}}`))
+			case "history":
+				w.Write([]byte(`{"history":{"slots":[]}}`))
+			default:
+				w.Write([]byte(`{"version":"0.3.2"}`))
+			}
 		case r.Method == "PROPFIND" && r.URL.Path == "/webdav/complete/mountenant/":
 			if u, p, ok := r.BasicAuth(); !ok || u != "dav" || p != testDavPass {
 				w.WriteHeader(http.StatusUnauthorized)
@@ -210,8 +220,28 @@ func TestServe(t *testing.T) {
 	if resp.StatusCode != 204 || len(resp.Cookies()) != 1 {
 		t.Fatalf("login: %d", resp.StatusCode)
 	}
+	session := resp.Cookies()[0]
+	call := func(method, path, ctype, csrf string, body io.Reader) (int, []byte) {
+		t.Helper()
+		r, _ := http.NewRequest(method, "http://"+addr+path, body)
+		r.AddCookie(session)
+		r.Header.Set("Origin", "https://dl.example.org")
+		if ctype != "" {
+			r.Header.Set("Content-Type", ctype)
+		}
+		if csrf != "" {
+			r.Header.Set("X-CSRF-Token", csrf)
+		}
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, b
+	}
 	mr, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/v1/me", nil)
-	mr.AddCookie(resp.Cookies()[0])
+	mr.AddCookie(session)
 	resp, err = http.DefaultClient.Do(mr)
 	if err != nil {
 		t.Fatal(err)
@@ -220,6 +250,24 @@ func TestServe(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 200 || !strings.Contains(string(me), `"username":"alice"`) {
 		t.Fatalf("me: %d %s", resp.StatusCode, me)
+	}
+	// Submit an NZB through the whole stack and find it in the list.
+	_, csrfBody := call("GET", "/api/v1/csrf", "", "", nil)
+	var csrf struct{ Token string }
+	json.Unmarshal(csrfBody, &csrf)
+	var mp bytes.Buffer
+	mw := multipart.NewWriter(&mp)
+	fw, _ := mw.CreateFormFile("nzb", "debian.nzb")
+	fw.Write([]byte(`<?xml version="1.0"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><file subject="x"><groups><group>a.b</group></groups><segments><segment bytes="1" number="1">a@b</segment></segments></file></nzb>`))
+	mw.Close()
+	if code, b := call("POST", "/api/v1/jobs", mw.FormDataContentType(), csrf.Token, &mp); code != 201 {
+		t.Fatalf("submit: %d %s", code, b)
+	}
+	if code, b := call("GET", "/api/v1/jobs", "", "", nil); code != 200 || !strings.Contains(string(b), `"name":"debian.nzb"`) {
+		t.Fatalf("list: %d %s", code, b)
+	}
+	if code, b := call("GET", "/api/v1/me", "", "", nil); code != 200 || !strings.Contains(string(b), `"activeJobs":1`) {
+		t.Fatalf("usage: %d %s", code, b)
 	}
 	sec, _ := os.ReadFile(filepath.Join(dir, "security.log"))
 	if !strings.Contains(string(sec), `event=auth_success ip=203.0.113.9 user="alice"`) {

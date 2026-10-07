@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 	identityapp "github.com/feruzabad/mountenant/internal/identity/app"
 	"github.com/feruzabad/mountenant/internal/identity/domain"
 	"github.com/feruzabad/mountenant/internal/jobs/adapters/sabdav"
+	jobsqlite "github.com/feruzabad/mountenant/internal/jobs/adapters/sqlite"
+	jobsapp "github.com/feruzabad/mountenant/internal/jobs/app"
+	jobsdomain "github.com/feruzabad/mountenant/internal/jobs/domain"
 	"github.com/feruzabad/mountenant/internal/platform/clock"
 	"github.com/feruzabad/mountenant/internal/platform/config"
 	"github.com/feruzabad/mountenant/internal/platform/db"
@@ -35,6 +39,14 @@ const (
 	loginFreeFailures = 5
 	loginMaxBackoff   = 15 * time.Minute
 )
+
+// orphanSweepDelay is when the first orphan sweep runs after startup
+// (spec UC-16).
+const orphanSweepDelay = 10 * time.Minute
+
+// uploadOverhead is the room for multipart framing on top of the NZB hard
+// cap.
+const uploadOverhead = 1 << 20
 
 // sessionPruneInterval is how often expired and idle sessions are deleted.
 const sessionPruneInterval = time.Hour
@@ -151,15 +163,60 @@ func serve(ctx context.Context, e env) error {
 	if err != nil {
 		return err
 	}
-	go pruneSessions(ctx, auth, log)
+	// Background workers stop with ctx; serve waits for them before the
+	// database is closed.
+	// Deferred calls run last-in first-out: workers are cancelled, then
+	// awaited, whichever way serve returns.
+	var workers sync.WaitGroup
+	defer workers.Wait()
+	wctx, stopWorkers := context.WithCancel(ctx)
+	defer stopWorkers()
+	workers.Go(func() { pruneSessions(wctx, auth, log) })
+
+	jobStore := jobsqlite.New(database)
+	if n, err := jobStore.PurgeNZBs(ctx); err != nil {
+		return err
+	} else if n > 0 {
+		log.Info("purged NZBs of submitted or finished jobs", "count", n)
+	}
+	jobsCfg := jobsapp.Config{
+		Retention: jobsdomain.Retention{
+			Ready:         cfg.Jobs.Retention.Duration,
+			Failed:        cfg.Jobs.FailedRetention.Duration,
+			ImportTimeout: cfg.Backend.ImportTimeout.Duration,
+		},
+		NZBHardCap:         cfg.Jobs.MaxNZBBytesHardCap,
+		MaxFilesPerJob:     cfg.Jobs.MaxFilesPerJob,
+		PollInterval:       cfg.Backend.PollInterval.Duration,
+		ReadyCheckInterval: cfg.Jobs.ReadyCheckInterval.Duration,
+	}
+	nudge := make(chan struct{}, 1)
+	jobService := &jobsapp.Service{
+		Jobs: jobStore, Backend: backend, Clock: clk, IDs: &id.UUIDv7{Clock: clk}, Config: jobsCfg, Logger: log,
+		Nudge: func() {
+			select {
+			case nudge <- struct{}{}:
+			default:
+			}
+		},
+	}
+	reconciler := &jobsapp.Reconciler{Jobs: jobStore, Backend: backend, Clock: clk, Config: jobsCfg, Logger: log}
+	workers.Go(func() { reconciler.Run(wctx, nudge) })
+	sweeper := &jobsapp.Sweeper{
+		Jobs: jobStore, Backend: backend, ImportTimeout: cfg.Backend.ImportTimeout.Duration,
+		DryRun: cfg.Jobs.OrphanSweepDryRun, Logger: log,
+	}
+	workers.Go(func() { sweeper.Run(wctx, orphanSweepDelay, cfg.Jobs.OrphanSweepInterval.Duration) })
 
 	apiServer := &handlers.Server{
-		Auth:         auth,
-		Usage:        noUsage{},
-		Policy:       policy,
-		PublicOrigin: cfg.Server.PublicURL,
-		Security:     seclog,
-		Logger:       log,
+		Auth:           auth,
+		Jobs:           jobService,
+		MaxUploadBytes: cfg.Jobs.MaxNZBBytesHardCap + uploadOverhead,
+		Usage:          jobUsage{jobStore},
+		Policy:         policy,
+		PublicOrigin:   cfg.Server.PublicURL,
+		Security:       seclog,
+		Logger:         log,
 	}
 
 	mux := http.NewServeMux()
@@ -281,10 +338,14 @@ func pruneSessions(ctx context.Context, auth *identityapp.Auth, log *slog.Logger
 	}
 }
 
-// noUsage reports zero usage until the jobs and delivery slices supply
-// real numbers for UC-03.
-type noUsage struct{}
+// jobUsage reports job counts for UC-03. Download usage arrives with the
+// delivery slice.
+type jobUsage struct{ jobs jobsdomain.JobRepository }
 
-func (noUsage) Usage(context.Context, domain.UserID) (handlers.Usage, error) {
-	return handlers.Usage{}, nil
+func (u jobUsage) Usage(ctx context.Context, user domain.UserID) (handlers.Usage, error) {
+	c, err := u.jobs.Counts(ctx, jobsdomain.OwnerID(user))
+	if err != nil {
+		return handlers.Usage{}, err
+	}
+	return handlers.Usage{ActiveJobs: c.Active, TotalJobs: c.Total}, nil
 }
