@@ -1,0 +1,12 @@
+# SQL -> Go (spec §9, §13.3). Regenerate with `make generate`; the output is
+# committed and CI fails when regeneration changes it.
+version: "2"
+sql:
+  - engine: sqlite
+    schema: migrations
+    queries: internal/identity/adapters/sqlite/queries.sql
+    gen:
+      go:
+        package: gen
+        out: internal/identity/adapters/sqlite/gen
+        emit_empty_slices: true

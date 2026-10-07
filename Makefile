@@ -3,7 +3,9 @@ BIN       := bin/mountenant
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS   := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build test race lint fmt vuln live-test clean
+SQLC_VERSION         := v1.31.1
+
+.PHONY: all build test race lint fmt vuln generate live-test clean
 
 all: lint test build
 
@@ -24,6 +26,10 @@ lint:
 	$(GO) vet ./...
 	$(GO) vet -tags live ./...
 	golangci-lint run
+
+# Generated code is committed; CI fails when this changes anything.
+generate:
+	$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
 
 vuln:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
