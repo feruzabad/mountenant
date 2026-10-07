@@ -314,3 +314,41 @@ func CheckSubmission(l Limits, c Counts) error {
 
 // EffectiveNZBLimit caps the owner's NZB limit by the hard cap.
 func EffectiveNZBLimit(owner, hardCap int64) int64 { return min(owner, hardCap) }
+
+// ParseNamespaceName extracts the job ID from a backend directory or
+// history name: "<uuid>", or "<uuid> (n)" for a duplicate import. Anything
+// else is not Mountenant's and must be left alone (UC-16).
+func ParseNamespaceName(name string) (JobID, bool) {
+	id, suffix, _ := strings.Cut(name, " ")
+	if !isUUID(id) {
+		return "", false
+	}
+	if suffix != "" {
+		n, ok := strings.CutPrefix(suffix, "(")
+		n, ok2 := strings.CutSuffix(n, ")")
+		if !ok || !ok2 || n == "" || strings.Trim(n, "0123456789") != "" {
+			return "", false
+		}
+	}
+	return JobID(id), true
+}
+
+func isUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				return false
+			}
+		}
+	}
+	return true
+}

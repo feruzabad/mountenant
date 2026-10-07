@@ -493,6 +493,19 @@ func (q *Queries) NZBBlob(ctx context.Context, jobID string) ([]byte, error) {
 	return content, err
 }
 
+const purgeNZBs = `-- name: PurgeNZBs :execrows
+DELETE FROM nzb_blobs
+WHERE job_id IN (SELECT id FROM jobs WHERE status IN ('failed', 'deleted') OR backend_ref_json IS NOT NULL)
+`
+
+func (q *Queries) PurgeNZBs(ctx context.Context) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeNZBs)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateJob = `-- name: UpdateJob :execrows
 UPDATE jobs
 SET status = ?, failure_code = ?, failure_message = ?, backend_ref_json = ?, updated_at = ?, ready_at = ?,

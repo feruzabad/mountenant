@@ -184,3 +184,17 @@ func TestScheduling(t *testing.T) {
 		t.Fatalf("removed: %v %+v", err, j)
 	}
 }
+
+func TestParseNamespaceName(t *testing.T) {
+	const u = "0192f0e0-0000-7000-8000-000000000001"
+	for name, want := range map[string]bool{
+		u: true, u + " (2)": true, u + " (13)": true,
+		u + " (x)": false, u + " 2": false, u + "(2)": false, u + " ()": false,
+		"Movie.2026": false, "0192F0E0-0000-7000-8000-000000000001": false, "": false,
+	} {
+		id, ok := ParseNamespaceName(name)
+		if ok != want || ok && id != u {
+			t.Errorf("%q: %q %v", name, id, ok)
+		}
+	}
+}

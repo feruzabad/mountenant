@@ -400,3 +400,5 @@ func (s *Store) KnownIDs(ctx context.Context) (map[domain.JobID]bool, error) {
 	}
 	return out, nil
 }
+
+func (s *Store) PurgeNZBs(ctx context.Context) (int64, error) { return s.w.PurgeNZBs(ctx) }

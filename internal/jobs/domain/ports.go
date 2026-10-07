@@ -52,6 +52,9 @@ type JobRepository interface {
 	Expired(ctx context.Context, now time.Time, limit int) ([]*Job, error)
 	// NZB returns the held NZB of a job, or ErrNoNZB.
 	NZB(ctx context.Context, id JobID) ([]byte, error)
+	// PurgeNZBs drops NZBs the backend already holds or whose job is
+	// terminal (UC-17, run at startup) and returns how many.
+	PurgeNZBs(ctx context.Context) (int64, error)
 	// KnownIDs returns the IDs of all jobs that are not Deleted, for the
 	// orphan sweep.
 	KnownIDs(ctx context.Context) (map[JobID]bool, error)

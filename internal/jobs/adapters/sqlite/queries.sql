@@ -71,3 +71,7 @@ DELETE FROM nzb_blobs WHERE job_id = ?;
 
 -- name: InsertEvent :exec
 INSERT INTO job_events (job_id, owner_id, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?);
+
+-- name: PurgeNZBs :execrows
+DELETE FROM nzb_blobs
+WHERE job_id IN (SELECT id FROM jobs WHERE status IN ('failed', 'deleted') OR backend_ref_json IS NOT NULL);
