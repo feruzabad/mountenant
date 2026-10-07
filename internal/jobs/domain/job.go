@@ -103,6 +103,12 @@ type Job struct {
 	FailedAt   time.Time
 	ExpiresAt  time.Time // zero only when Deleted
 
+	// Reconciler bookkeeping. NextCheckAt is zero when nothing is due:
+	// Failed jobs and deleted jobs whose backend cleanup is verified.
+	NextCheckAt      time.Time
+	Attempts         int
+	BackendRemovedAt time.Time
+
 	events []Event
 }
 
@@ -113,6 +119,7 @@ func NewJob(id JobID, owner OwnerID, name string, digest [32]byte, now time.Time
 	j := &Job{
 		ID: id, Owner: owner, NZBName: SanitizeNZBName(name), NZBDigest: digest, Status: StatusQueued,
 		CreatedAt: now, UpdatedAt: now, ExpiresAt: now.Add(r.ImportTimeout + r.Failed),
+		NextCheckAt: now,
 	}
 	j.raise(EventSubmitted, now)
 	return j
@@ -192,6 +199,7 @@ func (j *Job) Fail(f Failure, now time.Time, r Retention) error {
 	}
 	j.Status, j.Failure, j.Files = StatusFailed, &f, nil
 	j.FailedAt, j.UpdatedAt, j.ExpiresAt = now, now, now.Add(r.Failed)
+	j.NextCheckAt, j.Attempts = time.Time{}, 0
 	j.raise(EventFailed, now)
 	return nil
 }
@@ -203,7 +211,36 @@ func (j *Job) Delete(now time.Time) error {
 		return j.transitionErr(StatusDeleted)
 	}
 	j.Status, j.Files, j.UpdatedAt, j.ExpiresAt = StatusDeleted, nil, now, time.Time{}
+	j.NextCheckAt, j.Attempts = now, 0 // backend cleanup is due at once
 	j.raise(EventDeleted, now)
+	return nil
+}
+
+// ScheduleCheck sets when the reconciler looks at the job next.
+func (j *Job) ScheduleCheck(at time.Time) { j.NextCheckAt = at }
+
+// AttemptFailed counts a failed backend attempt and schedules a retry with
+// exponential backoff from base, capped at max. It returns the new count.
+func (j *Job) AttemptFailed(now time.Time, base, max time.Duration) int {
+	j.Attempts++
+	d := base << min(j.Attempts-1, 20)
+	if d > max || d <= 0 {
+		d = max
+	}
+	j.NextCheckAt = now.Add(d)
+	return j.Attempts
+}
+
+// AttemptSucceeded resets the failure count.
+func (j *Job) AttemptSucceeded() { j.Attempts = 0 }
+
+// BackendRemoved records that VerifyGone confirmed the cleanup of a deleted
+// job; nothing is due for it any more.
+func (j *Job) BackendRemoved(now time.Time) error {
+	if j.Status != StatusDeleted {
+		return j.transitionErr(StatusDeleted)
+	}
+	j.BackendRemovedAt, j.NextCheckAt, j.Attempts = now, time.Time{}, 0
 	return nil
 }
 

@@ -9,19 +9,22 @@ import (
 )
 
 type Job struct {
-	ID             string
-	OwnerID        string
-	NzbName        string
-	NzbDigest      []byte
-	Status         string
-	FailureCode    sql.NullString
-	FailureMessage sql.NullString
-	BackendRefJson sql.NullString
-	CreatedAt      int64
-	UpdatedAt      int64
-	ReadyAt        sql.NullInt64
-	FailedAt       sql.NullInt64
-	ExpiresAt      sql.NullInt64
+	ID               string
+	OwnerID          string
+	NzbName          string
+	NzbDigest        []byte
+	Status           string
+	FailureCode      sql.NullString
+	FailureMessage   sql.NullString
+	BackendRefJson   sql.NullString
+	CreatedAt        int64
+	UpdatedAt        int64
+	ReadyAt          sql.NullInt64
+	FailedAt         sql.NullInt64
+	ExpiresAt        sql.NullInt64
+	NextCheckAt      sql.NullInt64
+	Attempts         int64
+	BackendRemovedAt sql.NullInt64
 }
 
 type JobEvent struct {

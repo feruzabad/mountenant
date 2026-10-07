@@ -154,3 +154,33 @@ func TestCheckSubmission(t *testing.T) {
 		t.Fatal("hard cap")
 	}
 }
+
+func TestScheduling(t *testing.T) {
+	j := newJob()
+	if !j.NextCheckAt.Equal(t0) {
+		t.Fatal("new job not due")
+	}
+	for i, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 5 * time.Second} {
+		if n := j.AttemptFailed(t0, time.Second, 5*time.Second); n != i+1 || !j.NextCheckAt.Equal(t0.Add(want)) {
+			t.Fatalf("attempt %d: next %v", n, j.NextCheckAt.Sub(t0))
+		}
+	}
+	j.AttemptSucceeded()
+	if j.Attempts != 0 {
+		t.Fatal("not reset")
+	}
+	if err := j.BackendRemoved(t0); err == nil {
+		t.Fatal("cleanup of a live job")
+	}
+	j.Fail(Failure{Code: FailBackendFailed}, t0, ret)
+	if !j.NextCheckAt.IsZero() {
+		t.Fatal("failed job still scheduled")
+	}
+	j.Delete(t0.Add(time.Hour))
+	if !j.NextCheckAt.Equal(t0.Add(time.Hour)) {
+		t.Fatal("cleanup not due after delete")
+	}
+	if err := j.BackendRemoved(t0.Add(2 * time.Hour)); err != nil || !j.NextCheckAt.IsZero() || j.BackendRemovedAt.IsZero() {
+		t.Fatalf("removed: %v %+v", err, j)
+	}
+}

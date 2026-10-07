@@ -132,7 +132,7 @@ func TestMigrate(t *testing.T) {
 	environ, _ := setup(t, "http://backend:8080")
 	for i := 0; i < 2; i++ {
 		r := runCmd(t, environ, "", "migrate")
-		if r.code != 0 || !strings.Contains(r.stdout, "schema version 1") {
+		if r.code != 0 || !strings.Contains(r.stdout, "schema version 2") {
 			t.Fatalf("run %d: %+v", i, r)
 		}
 	}
