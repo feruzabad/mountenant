@@ -20,6 +20,7 @@ ADRs in Michael Nygard's format (see [ADR-0001](0001-record-architecture-decisio
 | [0004](0004-verify-based-backend-deletion.md) | Verify-based backend deletion | Accepted |
 | [0005](0005-nzb-intake-normalisation.md) | NZB intake normalisation | Accepted |
 | [0006](0006-transparent-upstream-resume.md) | Transparent upstream resume | Accepted |
+| [0007](0007-sqlite-storage-conventions.md) | SQLite storage conventions | Accepted |
 
 ADRs 0002–0005 follow from the phase-2 backend case study
 (`docs/feasibility.md`, AltMount 0.3.2 and NzbDav 0.6.4); ADR 0006 follows
