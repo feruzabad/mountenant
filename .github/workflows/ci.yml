@@ -69,7 +69,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/f2b.tar.gz" -C "$RUNNER_TEMP"
       - name: fail2ban-regex
         run: |
-          out=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from fail2ban.client.fail2banregex import exec_command_line; exec_command_line(sys.argv)' \
-            "$RUNNER_TEMP/fail2ban-$FAIL2BAN_VERSION" deploy/fail2ban/sample.log deploy/fail2ban/filter.d/mountenant.conf)
+          f2b="$RUNNER_TEMP/fail2ban-$FAIL2BAN_VERSION"
+          out=$(PYTHONPATH="$f2b" python3 "$f2b/bin/fail2ban-regex" deploy/fail2ban/sample.log deploy/fail2ban/filter.d/mountenant.conf)
           echo "$out"
           echo "$out" | grep -q "Lines: 7 lines, 0 ignored, 3 matched, 4 missed"
