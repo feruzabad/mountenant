@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -104,7 +105,7 @@ func (a *Adapter) sabDo(ctx context.Context, params url.Values, body io.Reader, 
 		}
 		resp, err := a.http.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, err)
+			return nil, fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, redactURLError(err))
 		}
 		defer resp.Body.Close()
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSABResponse))
@@ -149,6 +150,26 @@ func (a *Adapter) sabDo(ctx context.Context, params url.Values, body io.Reader, 
 }
 
 const maxSABResponse = 32 << 20
+
+// redactURLError hides the API key in transport errors: *url.Error quotes the
+// request URL, and the SABnzbd API takes the key as a query parameter.
+func redactURLError(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	u, perr := url.Parse(ue.URL)
+	if perr != nil {
+		ue.URL = "(unparseable URL)"
+		return err
+	}
+	if q := u.Query(); q.Has("apikey") {
+		q.Set("apikey", "REDACTED")
+		u.RawQuery = q.Encode()
+	}
+	ue.URL = u.String()
+	return err
+}
 
 func (a *Adapter) addFile(ctx context.Context, nzb []byte, jobID string) (string, error) {
 	var buf bytes.Buffer
