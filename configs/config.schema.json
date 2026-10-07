@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/feruzabad/mountenant/configs/config.schema.json",
+  "title": "Mountenant config.json",
+  "description": "Every scalar can be overridden with MOUNTENANT_<SECTION>_<KEY> (e.g. MOUNTENANT_SERVER_PUBLIC_URL); secrets can be read from files with a _FILE suffix. See docs/specification.md section 8.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "description": "Go duration string, e.g. \"15m\" or \"168h\"."
+    },
+    "listenAddr": {
+      "type": "string",
+      "description": "host:port on a loopback or private address."
+    },
+    "positiveInt": { "type": "integer", "minimum": 1 },
+    "rateLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "perMinute": { "$ref": "#/$defs/positiveInt" },
+        "burst": { "$ref": "#/$defs/positiveInt" }
+      }
+    }
+  },
+  "properties": {
+    "$schema": { "type": "string" },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "listenAddr": { "$ref": "#/$defs/listenAddr", "default": "127.0.0.1:8080" },
+        "publicUrl": {
+          "type": "string",
+          "pattern": "^https://[^/?#@]+/?$",
+          "description": "Public https origin served by the reverse proxy. Required."
+        },
+        "trustedProxies": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "IP addresses or CIDRs of the reverse proxy. Required; other peers get 403."
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "default": "/var/lib/mountenant/mountenant.db" },
+        "busyTimeoutMs": { "$ref": "#/$defs/positiveInt", "default": 5000 }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "idleTimeout": { "$ref": "#/$defs/duration", "default": "12h" },
+        "absoluteTimeout": { "$ref": "#/$defs/duration", "default": "168h" }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "type": "array",
+          "description": "HMAC keys for download links; the first signs, all verify. Normally supplied with MOUNTENANT_SIGNING_KEYS_FILE.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "secret"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,32}$" },
+              "secret": { "type": "string", "minLength": 32 }
+            }
+          }
+        },
+        "defaultTtl": { "$ref": "#/$defs/duration", "default": "15m" },
+        "maxTtl": { "$ref": "#/$defs/duration", "default": "24h" }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["altmount", "nzbdav"] },
+        "apiUrl": { "type": "string", "format": "uri", "description": "SABnzbd API endpoint, e.g. http://altmount:8080/sabnzbd/api or http://nzbdav:3000/api." },
+        "apiKey": { "type": "string", "description": "Prefer MOUNTENANT_BACKEND_API_KEY_FILE." },
+        "webdavUrl": { "type": "string", "format": "uri", "description": "WebDAV root, e.g. http://altmount:8080/webdav or http://nzbdav:3000." },
+        "webdavUser": { "type": "string" },
+        "webdavPassword": { "type": "string", "description": "Prefer MOUNTENANT_BACKEND_WEBDAV_PASSWORD_FILE." },
+        "category": { "type": "string", "pattern": "^[A-Za-z0-9-]+$", "default": "mountenant" },
+        "requestTimeout": { "$ref": "#/$defs/duration", "default": "30s" },
+        "pollInterval": { "$ref": "#/$defs/duration", "default": "10s" },
+        "importTimeout": { "$ref": "#/$defs/duration", "default": "30m" }
+      }
+    },
+    "jobs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "retention": { "$ref": "#/$defs/duration", "default": "168h" },
+        "maxNzbBytesHardCap": { "$ref": "#/$defs/positiveInt", "default": 67108864 },
+        "failedRetention": { "$ref": "#/$defs/duration", "default": "24h" },
+        "readyCheckInterval": { "$ref": "#/$defs/duration", "default": "1h" },
+        "orphanSweepInterval": { "$ref": "#/$defs/duration", "default": "6h" },
+        "orphanSweepDryRun": { "type": "boolean", "default": false },
+        "maxFilesPerJob": { "$ref": "#/$defs/positiveInt", "default": 10000 }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "quota": { "$ref": "users.schema.json#/$defs/quota" }
+      }
+    },
+    "rateLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "login": { "$ref": "#/$defs/rateLimit" },
+        "api": { "$ref": "#/$defs/rateLimit" }
+      }
+    },
+    "logging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": { "enum": ["debug", "info", "warn", "error"], "default": "info" },
+        "format": { "enum": ["json", "text"], "default": "json" },
+        "securityLog": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "default": "/var/log/mountenant/security.log" },
+            "stdout": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "listenAddr": { "$ref": "#/$defs/listenAddr", "default": "127.0.0.1:9090" }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxConcurrentHashes": { "$ref": "#/$defs/positiveInt", "default": 2 },
+        "hashWaitTimeout": { "$ref": "#/$defs/duration", "default": "2s" },
+        "argon2": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "memoryKiB": { "type": "integer", "minimum": 19456, "default": 65536 },
+            "iterations": { "$ref": "#/$defs/positiveInt", "default": 3 },
+            "parallelism": { "type": "integer", "minimum": 1, "maximum": 255, "default": 4 }
+          }
+        }
+      }
+    }
+  }
+}

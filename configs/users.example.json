@@ -1,0 +1,11 @@
+[
+  {
+    "username": "alice",
+    "passwordHash": "$argon2id$v=19$m=65536,t=3,p=4$REPLACEwithOUTPUTofHASHpw$REPLACEwithOUTPUTofMOUNTENANTHASHPASSWORDcommand"
+  },
+  {
+    "username": "bob",
+    "passwordHash": "$argon2id$v=19$m=65536,t=3,p=4$REPLACEwithOUTPUTofHASHpw$REPLACEwithOUTPUTofMOUNTENANTHASHPASSWORDcommand",
+    "quota": { "maxConcurrentDownloads": 2 }
+  }
+]

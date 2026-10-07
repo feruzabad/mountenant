@@ -1,0 +1,36 @@
+{
+  "$schema": "./config.schema.json",
+  "server": {
+    "listenAddr": "127.0.0.1:8080",
+    "publicUrl": "https://dl.example.org",
+    "trustedProxies": ["127.0.0.1"]
+  },
+  "database": {
+    "path": "/var/lib/mountenant/mountenant.db"
+  },
+  "backend": {
+    "type": "altmount",
+    "apiUrl": "http://altmount:8080/sabnzbd/api",
+    "webdavUrl": "http://altmount:8080/webdav",
+    "webdavUser": "mountenant",
+    "category": "mountenant"
+  },
+  "jobs": {
+    "retention": "168h",
+    "orphanSweepDryRun": true
+  },
+  "defaults": {
+    "quota": {
+      "maxActiveJobs": 5,
+      "maxTotalJobs": 50,
+      "maxNzbBytes": 33554432,
+      "maxDownloadBytesPerDay": 107374182400,
+      "maxConcurrentDownloads": 4
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "securityLog": { "path": "/var/log/mountenant/security.log" }
+  }
+}
