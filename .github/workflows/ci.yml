@@ -52,14 +52,24 @@ jobs:
 
   fail2ban:
     # The security log format is a public contract (spec 7.8): the shipped
-    # filter must match exactly the failure lines in the sample.
+    # filter must match exactly the failure lines in the sample. fail2ban is
+    # run from its pinned, checksummed source release; installing it with
+    # apt repeatedly hung on runner mirrors.
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      FAIL2BAN_VERSION: "1.1.0"
+      FAIL2BAN_SHA256: 474fcc25afdaf929c74329d1e4d24420caabeea1ef2e041a267ce19269570bae
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fail2ban
+      - name: fetch fail2ban
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/f2b.tar.gz" "https://github.com/fail2ban/fail2ban/archive/refs/tags/$FAIL2BAN_VERSION.tar.gz"
+          echo "$FAIL2BAN_SHA256  $RUNNER_TEMP/f2b.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/f2b.tar.gz" -C "$RUNNER_TEMP"
       - name: fail2ban-regex
         run: |
-          out=$(fail2ban-regex deploy/fail2ban/sample.log deploy/fail2ban/filter.d/mountenant.conf)
+          out=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from fail2ban.client.fail2banregex import exec_command_line; exec_command_line(sys.argv)' \
+            "$RUNNER_TEMP/fail2ban-$FAIL2BAN_VERSION" deploy/fail2ban/sample.log deploy/fail2ban/filter.d/mountenant.conf)
           echo "$out"
           echo "$out" | grep -q "Lines: 7 lines, 0 ignored, 3 matched, 4 missed"
