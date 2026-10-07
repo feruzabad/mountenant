@@ -63,10 +63,11 @@ func TestMalformed(t *testing.T) {
 		"$argon2id$v=19$m=64,t=1,p=1,x=2$c29tZXNhbHQ$CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc",
 		"$argon2id$v=19$m=64,t=1,p=1$!!$CTFhFdXPJO1aFaMaO6Mm5c8y7cJHAph8ArZWb2GRPPc",
 		"$argon2id$v=19$m=64,t=1,p=1$c29tZXNhbHQ$c2hvcnQ",
+		"$argon2id$v=19$m=64,t=1,p=1$c29tZXNhbHQ$" + strings.Repeat("A", 1<<20),
 	} {
 		ok, err := cheap.Verify("pw", enc)
 		if ok || !errors.Is(err, domain.ErrMalformedHash) {
-			t.Errorf("%q: ok=%v err=%v", enc, ok, err)
+			t.Errorf("%.80q: ok=%v err=%v", enc, ok, err)
 		}
 	}
 }

@@ -23,6 +23,8 @@ const (
 	// cannot make one login allocate gigabytes.
 	maxMemoryKiB  = 1 << 20 // 1 GiB
 	maxIterations = 64
+	maxSaltLen    = 64
+	maxKeyLen     = 64
 )
 
 // Params are the argon2id cost parameters used for new hashes.
@@ -61,7 +63,7 @@ func (Hasher) Verify(password, encoded string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	got := argon2.IDKey([]byte(password), salt, p.Iterations, p.MemoryKiB, p.Parallelism, uint32(len(key)))
+	got := argon2.IDKey([]byte(password), salt, p.Iterations, p.MemoryKiB, p.Parallelism, uint32(len(key))) //nolint:gosec // len(key) <= maxKeyLen (Decode)
 	return subtle.ConstantTimeCompare(got, key) == 1, nil
 }
 
@@ -102,6 +104,11 @@ func Decode(encoded string) (p Params, salt, key []byte, err error) {
 		return bad("iterations out of range")
 	case par < 1 || par > 255:
 		return bad("parallelism out of range")
+	}
+	// Length checks run on the encoded form first, so an oversized value is
+	// rejected before it is decoded.
+	if len(parts[4]) > b64.EncodedLen(maxSaltLen) || len(parts[5]) > b64.EncodedLen(maxKeyLen) {
+		return bad("salt or key too long")
 	}
 	if salt, err = b64.DecodeString(parts[4]); err != nil || len(salt) < 8 {
 		return bad("bad salt")
