@@ -1,0 +1,20 @@
+# IDE workspace files (contain local paths)
+.idea/
+.vscode/
+*.iml
+
+# Build output
+/bin/
+/dist/
+*.test
+*.out
+
+# Local configuration and secrets
+*.local.json
+.env
+.env.*
+
+# Test data (NZBs and downloaded content stay out of the repository)
+*.nzb
+*.nzb.gz
+*.iso
