@@ -1,0 +1,9 @@
+# Go server interface and models for the API (spec §13.3).
+package: api
+output: internal/http/api/api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+output-options:
+  exclude-tags: [ops]

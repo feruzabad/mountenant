@@ -4,6 +4,7 @@ VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo de
 LDFLAGS   := -s -w -X main.version=$(VERSION)
 
 SQLC_VERSION         := v1.31.1
+OAPI_CODEGEN_VERSION := v2.8.0
 
 .PHONY: all build test race lint fmt vuln generate live-test clean
 
@@ -30,6 +31,7 @@ lint:
 # Generated code is committed; CI fails when this changes anything.
 generate:
 	$(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION) generate
+	$(GO) run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION) -config api/oapi-codegen.yaml api/openapi.yaml
 
 vuln:
 	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...

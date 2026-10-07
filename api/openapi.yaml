@@ -1,0 +1,239 @@
+openapi: 3.1.0
+info:
+  title: Mountenant API
+  version: 1.0.0
+  description: |
+    Multi-user front door to an AltMount or NzbDav backend. This document is
+    the source of truth for the HTTP API (docs/specification.md §6); the Go
+    server interface and the TypeScript client are generated from it.
+
+    Authentication uses the `__Host-mountenant_session` cookie. Unsafe
+    requests also need an `Origin` header matching the public URL and,
+    except for login, the CSRF token from `GET /api/v1/csrf` in
+    `X-CSRF-Token`.
+
+    Errors are RFC 9457 Problem Details with a stable `code`.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: /
+tags:
+  - name: auth
+  - name: account
+  - name: ops
+    description: Operational endpoints, served outside the generated router.
+paths:
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in (UC-01)
+      description: |
+        Starts a new session and sets the session cookie. Any session the
+        browser already had is revoked. Wrong usernames and wrong passwords
+        get the same answer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "204":
+          description: Logged in.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetSessionCookie"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Log out (UC-02)
+      security:
+        - session: []
+      responses:
+        "204":
+          description: Logged out; the cookie is cleared.
+          headers:
+            Set-Cookie:
+              $ref: "#/components/headers/SetSessionCookie"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+  /api/v1/csrf:
+    get:
+      tags: [auth]
+      operationId: getCsrfToken
+      summary: Get the CSRF token bound to the session
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The token to send in X-CSRF-Token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CsrfToken"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /api/v1/me:
+    get:
+      tags: [account]
+      operationId: getMe
+      summary: Current user, quota and usage (UC-03)
+      security:
+        - session: []
+      responses:
+        "200":
+          description: The logged-in user.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Me"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /healthz:
+    get:
+      tags: [ops]
+      operationId: healthz
+      summary: Liveness
+      responses:
+        "200":
+          description: The process is alive.
+  /readyz:
+    get:
+      tags: [ops]
+      operationId: readyz
+      summary: Readiness (database writable, backend reachable)
+      responses:
+        "200":
+          description: Ready.
+        "503":
+          description: Not ready; the body names the failing checks.
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-mountenant_session
+  headers:
+    SetSessionCookie:
+      description: "`__Host-mountenant_session`; Secure, HttpOnly, SameSite=Lax, Path=/."
+      schema:
+        type: string
+  responses:
+    Problem:
+      description: Error (RFC 9457).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After:
+          description: Seconds to wait.
+          schema:
+            type: integer
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          maxLength: 64
+        password:
+          type: string
+          maxLength: 1024
+    CsrfToken:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+    Me:
+      type: object
+      required: [username, quota, usage]
+      properties:
+        username:
+          type: string
+        quota:
+          $ref: "#/components/schemas/Quota"
+        usage:
+          $ref: "#/components/schemas/Usage"
+    Quota:
+      type: object
+      required: [maxActiveJobs, maxTotalJobs, maxNzbBytes, maxDownloadBytesPerDay, maxConcurrentDownloads]
+      properties:
+        maxActiveJobs:
+          type: integer
+        maxTotalJobs:
+          type: integer
+        maxNzbBytes:
+          type: integer
+          format: int64
+        maxDownloadBytesPerDay:
+          type: integer
+          format: int64
+        maxConcurrentDownloads:
+          type: integer
+    Usage:
+      type: object
+      required: [activeJobs, totalJobs, downloadedBytesToday, activeDownloads]
+      properties:
+        activeJobs:
+          type: integer
+        totalJobs:
+          type: integer
+        downloadedBytesToday:
+          type: integer
+          format: int64
+        activeDownloads:
+          type: integer
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          description: "urn:mountenant:problem:<code>"
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+          enum:
+            - bad_request
+            - invalid_nzb
+            - unauthenticated
+            - csrf_failed
+            - link_invalid
+            - forbidden
+            - not_found
+            - job_not_ready
+            - nzb_too_large
+            - quota_exceeded
+            - rate_limited
+            - backend_unavailable
+            - download_limit
+            - content_missing
+            - internal
+        detail:
+          type: string
