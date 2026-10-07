@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -193,6 +194,36 @@ func TestServe(t *testing.T) {
 		if resp.StatusCode != want {
 			t.Errorf("%s: %d, want %d", path, resp.StatusCode, want)
 		}
+	}
+
+	// Log in through the full stack (proxy gate, guard, generated router).
+	body := strings.NewReader(`{"username":"alice","password":"` + testPassword + `"}`)
+	lr, _ := http.NewRequest(http.MethodPost, "http://"+addr+"/api/v1/auth/login", body)
+	lr.Header.Set("Content-Type", "application/json")
+	lr.Header.Set("Origin", "https://dl.example.org")
+	lr.Header.Set("X-Forwarded-For", "203.0.113.9")
+	resp, err := http.DefaultClient.Do(lr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 204 || len(resp.Cookies()) != 1 {
+		t.Fatalf("login: %d", resp.StatusCode)
+	}
+	mr, _ := http.NewRequest(http.MethodGet, "http://"+addr+"/api/v1/me", nil)
+	mr.AddCookie(resp.Cookies()[0])
+	resp, err = http.DefaultClient.Do(mr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	me, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(me), `"username":"alice"`) {
+		t.Fatalf("me: %d %s", resp.StatusCode, me)
+	}
+	sec, _ := os.ReadFile(filepath.Join(dir, "security.log"))
+	if !strings.Contains(string(sec), `event=auth_success ip=203.0.113.9 user="alice"`) {
+		t.Fatalf("security log: %s", sec)
 	}
 
 	// SIGHUP re-reads users.json (UC-04).

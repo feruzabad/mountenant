@@ -13,17 +13,31 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/feruzabad/mountenant/internal/http/handlers"
 	"github.com/feruzabad/mountenant/internal/http/health"
 	"github.com/feruzabad/mountenant/internal/http/middleware"
+	"github.com/feruzabad/mountenant/internal/identity/adapters/argon2id"
 	identitysqlite "github.com/feruzabad/mountenant/internal/identity/adapters/sqlite"
 	identityapp "github.com/feruzabad/mountenant/internal/identity/app"
+	"github.com/feruzabad/mountenant/internal/identity/domain"
 	"github.com/feruzabad/mountenant/internal/jobs/adapters/sabdav"
 	"github.com/feruzabad/mountenant/internal/platform/clock"
 	"github.com/feruzabad/mountenant/internal/platform/config"
 	"github.com/feruzabad/mountenant/internal/platform/db"
 	"github.com/feruzabad/mountenant/internal/platform/id"
 	"github.com/feruzabad/mountenant/internal/platform/logging"
+	"github.com/feruzabad/mountenant/internal/platform/ratelimit"
 )
+
+// Login backoff (spec §7.1): after loginFreeFailures failures for one
+// username, each further attempt waits 1s, 2s, 4s, … up to loginMaxBackoff.
+const (
+	loginFreeFailures = 5
+	loginMaxBackoff   = 15 * time.Minute
+)
+
+// sessionPruneInterval is how often expired and idle sessions are deleted.
+const sessionPruneInterval = time.Hour
 
 // shutdownGrace is how long in-flight requests may take after SIGTERM
 // (spec §12.2).
@@ -120,9 +134,38 @@ func serve(ctx context.Context, e env) error {
 		},
 		Timeout: min(cfg.Backend.RequestTimeout.Duration, 5*time.Second),
 	}
+	policy := domain.SessionPolicy{IdleTimeout: cfg.Session.IdleTimeout.Duration, AbsoluteTimeout: cfg.Session.AbsoluteTimeout.Duration}
+	a2 := cfg.Auth.Argon2
+	auth, err := identityapp.NewAuth(identityapp.Auth{
+		Users:       store,
+		Sessions:    store,
+		Hasher:      argon2id.Hasher{Params: argon2id.Params{MemoryKiB: a2.MemoryKiB, Iterations: a2.Iterations, Parallelism: a2.Parallelism}},
+		Clock:       clk,
+		Policy:      policy,
+		Security:    seclog,
+		Logger:      log,
+		IPLimit:     &ratelimit.Buckets{PerMinute: cfg.RateLimits.Login.PerMinute, Burst: cfg.RateLimits.Login.Burst},
+		UserLimit:   &ratelimit.Buckets{PerMinute: cfg.RateLimits.Login.PerMinute, Burst: cfg.RateLimits.Login.Burst},
+		UserBackoff: &ratelimit.Backoff{Free: loginFreeFailures, Base: time.Second, Max: loginMaxBackoff},
+	}, cfg.Auth.MaxConcurrentHashes, cfg.Auth.HashWaitTimeout.Duration)
+	if err != nil {
+		return err
+	}
+	go pruneSessions(ctx, auth, log)
+
+	apiServer := &handlers.Server{
+		Auth:         auth,
+		Usage:        noUsage{},
+		Policy:       policy,
+		PublicOrigin: cfg.Server.PublicURL,
+		Security:     seclog,
+		Logger:       log,
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.Handle("GET /readyz", ready)
+	mux.Handle("/api/", apiServer.Handler())
 
 	var prefixes []netip.Prefix
 	for _, p := range cfg.Server.TrustedProxies {
@@ -218,4 +261,30 @@ func newBackend(c config.Backend) (*sabdav.Adapter, error) {
 		DavPassword: c.WebDAVPassword,
 		Category:    c.Category,
 	}, profile, &http.Client{Transport: tr})
+}
+
+func pruneSessions(ctx context.Context, auth *identityapp.Auth, log *slog.Logger) {
+	t := time.NewTicker(sessionPruneInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			n, err := auth.PruneSessions(ctx)
+			if err != nil {
+				log.Error("pruning sessions", "err", err)
+			} else if n > 0 {
+				log.Info("sessions pruned", "count", n)
+			}
+		}
+	}
+}
+
+// noUsage reports zero usage until the jobs and delivery slices supply
+// real numbers for UC-03.
+type noUsage struct{}
+
+func (noUsage) Usage(context.Context, domain.UserID) (handlers.Usage, error) {
+	return handlers.Usage{}, nil
 }
