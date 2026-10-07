@@ -7,12 +7,14 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/feruzabad/mountenant/internal/http/health"
+	"github.com/feruzabad/mountenant/internal/http/middleware"
 	identitysqlite "github.com/feruzabad/mountenant/internal/identity/adapters/sqlite"
 	identityapp "github.com/feruzabad/mountenant/internal/identity/app"
 	"github.com/feruzabad/mountenant/internal/jobs/adapters/sabdav"
@@ -122,8 +124,28 @@ func serve(ctx context.Context, e env) error {
 	mux.HandleFunc("GET /healthz", health.Liveness)
 	mux.Handle("GET /readyz", ready)
 
+	var prefixes []netip.Prefix
+	for _, p := range cfg.Server.TrustedProxies {
+		pfx, err := config.ParsePrefix(p)
+		if err != nil {
+			return err
+		}
+		prefixes = append(prefixes, pfx)
+	}
+	proxies := &middleware.TrustedProxies{
+		Prefixes: prefixes,
+		Exempt:   map[string]bool{"/healthz": true, "/readyz": true},
+		Security: seclog,
+	}
+	handler := middleware.Chain(mux,
+		middleware.RequestIDs,
+		middleware.SecurityHeaders,
+		proxies.Wrap,
+		middleware.AccessLog(log),
+	)
+
 	srv := &http.Server{
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
