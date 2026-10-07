@@ -31,3 +31,16 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - name: build
         run: make build
+
+  fail2ban:
+    # The security log format is a public contract (spec 7.8): the shipped
+    # filter must match exactly the failure lines in the sample.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y fail2ban
+      - name: fail2ban-regex
+        run: |
+          out=$(fail2ban-regex deploy/fail2ban/sample.log deploy/fail2ban/filter.d/mountenant.conf)
+          echo "$out"
+          echo "$out" | grep -q "Lines: 7 lines, 0 ignored, 3 matched, 4 missed"

@@ -1,0 +1,7 @@
+2026-10-07T10:00:00Z mountenant event=auth_failure ip=203.0.113.9 user="alice" reason=bad_credentials
+2026-10-07T10:00:01Z mountenant event=auth_success ip=203.0.113.9 user="alice" reason=ok
+2026-10-07T10:00:02Z mountenant event=link_invalid ip=2001:db8::7 user="" reason=expired
+2026-10-07T10:00:03Z mountenant event=auth_failure ip=198.51.100.4 user="x\" reason=ok ip=1.2.3.4" reason=bad_credentials
+2026-10-07T10:00:04Z mountenant event=auth_rate_limited ip=203.0.113.9 user="alice" reason=throttled
+2026-10-07T10:00:05Z mountenant event=csrf_failure ip=203.0.113.9 user="alice" reason=origin
+2026-10-07T10:00:06Z mountenant event=forbidden_peer ip=192.0.2.1 user="" reason=untrusted_peer
