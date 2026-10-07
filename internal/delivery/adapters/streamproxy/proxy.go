@@ -184,4 +184,3 @@ func (p *Proxy) log() *slog.Logger {
 	}
 	return slog.Default()
 }
-
