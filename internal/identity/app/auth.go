@@ -253,11 +253,10 @@ func (a *Auth) Authenticate(ctx context.Context, token string) (domain.User, dom
 
 // Logout revokes the session behind token. Unknown tokens are not an error.
 func (a *Auth) Logout(ctx context.Context, token string) error {
-	id, err := domain.ParseToken(token)
-	if err != nil {
-		return nil
+	if id, err := domain.ParseToken(token); err == nil {
+		return a.Sessions.Delete(ctx, id)
 	}
-	return a.Sessions.Delete(ctx, id)
+	return nil // a malformed token names no session
 }
 
 // PruneSessions deletes expired and idle sessions; run periodically.
