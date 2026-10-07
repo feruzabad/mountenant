@@ -220,7 +220,7 @@ func TestListCountsDueExpired(t *testing.T) {
 	if page, _, _ := s.List(ctx, "u1", domain.ListQuery{Limit: 10, Status: domain.StatusReady}); len(page) != 1 || page[0].ID != "j1" {
 		t.Fatalf("status filter %v", page)
 	}
-	if _, _, err := s.List(ctx, "u1", domain.ListQuery{Limit: 10, Cursor: "!!"}); !errors.Is(err, ErrBadCursor) {
+	if _, _, err := s.List(ctx, "u1", domain.ListQuery{Limit: 10, Cursor: "!!"}); !errors.Is(err, domain.ErrBadCursor) {
 		t.Fatal("bad cursor accepted")
 	}
 

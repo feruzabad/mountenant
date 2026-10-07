@@ -15,6 +15,8 @@ var (
 	// ErrNoNZB means the NZB blob is gone (the backend accepted it, or the
 	// job is terminal).
 	ErrNoNZB = errors.New("NZB no longer held")
+	// ErrBadCursor means a list cursor was not issued by List.
+	ErrBadCursor = errors.New("invalid cursor")
 )
 
 // DuplicateError is returned by Create when the owner already has a live

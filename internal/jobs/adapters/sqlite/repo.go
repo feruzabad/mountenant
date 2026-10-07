@@ -305,9 +305,6 @@ func (s *Store) Load(ctx context.Context, id domain.JobID) (*domain.Job, error) 
 	return s.load(ctx, s.r, g)
 }
 
-// ErrBadCursor is returned by List for a cursor it did not issue.
-var ErrBadCursor = errors.New("invalid cursor")
-
 func encodeCursor(j *domain.Job) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(ms(j.CreatedAt), 10) + "|" + string(j.ID)))
 }
@@ -315,12 +312,12 @@ func encodeCursor(j *domain.Job) string {
 func decodeCursor(c string) (int64, string, error) {
 	b, err := base64.RawURLEncoding.DecodeString(c)
 	if err != nil {
-		return 0, "", ErrBadCursor
+		return 0, "", domain.ErrBadCursor
 	}
 	ts, id, ok := strings.Cut(string(b), "|")
 	n, err := strconv.ParseInt(ts, 10, 64)
 	if !ok || err != nil || id == "" {
-		return 0, "", ErrBadCursor
+		return 0, "", domain.ErrBadCursor
 	}
 	return n, id, nil
 }
