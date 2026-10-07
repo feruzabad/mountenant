@@ -1,0 +1,54 @@
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - unconvert
+    - usestdlibvars
+  settings:
+    depguard:
+      # Spec 13.2: domain packages import only the standard library and their
+      # own context's domain.
+      rules:
+        identity-domain:
+          list-mode: strict
+          files: ["**/internal/identity/domain/**"]
+          allow: [$gostd]
+        jobs-domain:
+          list-mode: strict
+          files: ["**/internal/jobs/domain/**"]
+          allow: [$gostd]
+        delivery-domain:
+          list-mode: strict
+          files: ["**/internal/delivery/domain/**"]
+          allow: [$gostd]
+    gosec:
+      excludes:
+        - G104 # unchecked errors are covered by errcheck
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Test fixtures ignore errors that their assertions would catch anyway.
+      - path: _test\.go
+        linters: [gosec, noctx, bodyclose, errcheck, usestdlibvars]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/feruzabad/mountenant
