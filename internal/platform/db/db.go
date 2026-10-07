@@ -104,7 +104,7 @@ func (d *DB) CheckWritable(ctx context.Context) error {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, "SELECT 1"); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 	return tx.Rollback()

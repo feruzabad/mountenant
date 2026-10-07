@@ -52,7 +52,7 @@ func Load(environ []string) (*Loaded, error) {
 	if cfgPath == "" {
 		cfgPath, explicit = defaultCfgPath, false
 	}
-	switch b, err := os.ReadFile(cfgPath); {
+	switch b, err := os.ReadFile(cfgPath); { //nolint:gosec // operator-chosen path
 	case err == nil:
 		if err := decodeStrict(b, &l.Config); err != nil {
 			return nil, fmt.Errorf("%s: %w", cfgPath, err)
@@ -68,7 +68,7 @@ func Load(environ []string) (*Loaded, error) {
 	if usersPath == "" {
 		usersPath, explicit = filepath.Join(filepath.Dir(cfgPath), "users.json"), false
 	}
-	switch b, err := os.ReadFile(usersPath); {
+	switch b, err := os.ReadFile(usersPath); { //nolint:gosec // operator-chosen path
 	case err == nil:
 		if err := decodeStrict(b, &l.Users); err != nil {
 			return nil, fmt.Errorf("%s: %w", usersPath, err)
@@ -180,7 +180,7 @@ func applyEnv(c *Config, env map[string]string) error {
 					errs.addf("%s and %s are both set; use one", base, k)
 					continue
 				}
-				b, err := os.ReadFile(val)
+				b, err := os.ReadFile(val) //nolint:gosec // *_FILE secrets name a path by design
 				if err != nil {
 					errs.addf("%s: %v", k, err)
 					continue

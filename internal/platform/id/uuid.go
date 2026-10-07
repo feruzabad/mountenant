@@ -54,14 +54,16 @@ func (g *UUIDv7) New() string {
 	ms, seq := g.lastMs, g.seq
 	g.mu.Unlock()
 
-	b[0] = byte(ms >> 40)
-	b[1] = byte(ms >> 32)
-	b[2] = byte(ms >> 24)
-	b[3] = byte(ms >> 16)
-	b[4] = byte(ms >> 8)
-	b[5] = byte(ms)
+	// Truncating conversions are intended: 48 bits of milliseconds, then the
+	// version nibble and 12 bits of counter.
+	b[0] = byte(ms >> 40) //nolint:gosec
+	b[1] = byte(ms >> 32) //nolint:gosec
+	b[2] = byte(ms >> 24) //nolint:gosec
+	b[3] = byte(ms >> 16) //nolint:gosec
+	b[4] = byte(ms >> 8)  //nolint:gosec
+	b[5] = byte(ms)       //nolint:gosec
 	b[6] = 0x70 | byte(seq>>8)
-	b[7] = byte(seq)
+	b[7] = byte(seq)        //nolint:gosec
 	b[8] = b[8]&0x3f | 0x80 // variant 10
 	return format(b)
 }
@@ -95,7 +97,7 @@ func Valid(s string) bool {
 				return false
 			}
 		default:
-			if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				return false
 			}
 		}

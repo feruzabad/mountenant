@@ -60,7 +60,7 @@ func (a *Adapter) propfind(ctx context.Context, dirURL, depth string) ([]davEntr
 		req.SetBasicAuth(a.cfg.DavUser, a.cfg.DavPassword)
 		resp, err := a.http.Do(req)
 		if err != nil {
-			return fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, err)
+			return fmt.Errorf("%w: %w", domain.ErrBackendUnavailable, err)
 		}
 		defer resp.Body.Close()
 		if err := davStatusErr("PROPFIND", resp.StatusCode); err != nil {
@@ -72,7 +72,7 @@ func (a *Adapter) propfind(ctx context.Context, dirURL, depth string) ([]davEntr
 		backendNow, _ = http.ParseTime(resp.Header.Get("Date"))
 		var ms multistatus
 		if err := xml.NewDecoder(io.LimitReader(resp.Body, maxPropfind)).Decode(&ms); err != nil {
-			return fmt.Errorf("%w: PROPFIND: %v", domain.ErrBadResponse, err)
+			return fmt.Errorf("%w: PROPFIND: %w", domain.ErrBadResponse, err)
 		}
 		entries = entries[:0]
 		for _, r := range ms.Responses {
@@ -141,7 +141,7 @@ func (a *Adapter) davDelete(ctx context.Context, target string) error {
 		req.SetBasicAuth(a.cfg.DavUser, a.cfg.DavPassword)
 		resp, err := a.http.Do(req)
 		if err != nil {
-			return fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, err)
+			return fmt.Errorf("%w: %w", domain.ErrBackendUnavailable, err)
 		}
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusNotFound {
@@ -173,7 +173,7 @@ func (a *Adapter) davGet(ctx context.Context, fileURL string, r *domain.ByteRang
 		}
 		resp, err := a.http.Do(req)
 		if err != nil {
-			return fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, err)
+			return fmt.Errorf("%w: %w", domain.ErrBackendUnavailable, err)
 		}
 		if err := davStatusErr("GET", resp.StatusCode); err != nil {
 			resp.Body.Close()

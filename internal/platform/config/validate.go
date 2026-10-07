@@ -218,7 +218,7 @@ func positive(errs *errList, name string, d Duration) {
 func checkListenAddr(addr string) (warning string, err error) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", fmt.Errorf("%q: %v", addr, err)
+		return "", fmt.Errorf("%q: %w", addr, err)
 	}
 	if port == "" {
 		return "", fmt.Errorf("%q: port required", addr)

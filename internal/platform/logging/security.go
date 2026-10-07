@@ -66,7 +66,7 @@ func (l *SecurityLog) Reopen() error {
 	if l.path == "" {
 		return nil
 	}
-	f, err := os.OpenFile(l.path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o640)
+	f, err := os.OpenFile(l.path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
 		return fmt.Errorf("security log: %w", err)
 	}
@@ -103,7 +103,7 @@ func (l *SecurityLog) Log(e SecurityEvent) error {
 		_, err = io.WriteString(l.file, line)
 	}
 	if l.stdout != nil {
-		io.WriteString(l.stdout, line)
+		_, _ = io.WriteString(l.stdout, line) // the file is authoritative
 	}
 	return err
 }
@@ -126,7 +126,7 @@ func token(s string) string {
 	}
 	b := []byte(s)
 	for i, c := range b {
-		if !('a' <= c && c <= 'z' || '0' <= c && c <= '9' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
 			b[i] = '_'
 		}
 	}

@@ -105,7 +105,7 @@ func serve(ctx context.Context, e env) error {
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	ln, err := net.Listen("tcp", cfg.Server.ListenAddr)
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Server.ListenAddr)
 	if err != nil {
 		return err
 	}

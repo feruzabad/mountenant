@@ -86,7 +86,7 @@ func (a *Adapter) retry(ctx context.Context, fn func() error) error {
 		if attempt > 0 {
 			a.retries.Add(1)
 			backoff := a.cfg.RetryBase << (attempt - 1)
-			backoff += time.Duration(rand.Int64N(int64(backoff)/2 + 1))
+			backoff += time.Duration(rand.Int64N(int64(backoff)/2 + 1)) //nolint:gosec // jitter, not a secret
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

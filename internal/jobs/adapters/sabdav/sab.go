@@ -105,12 +105,12 @@ func (a *Adapter) sabDo(ctx context.Context, params url.Values, body io.Reader, 
 		}
 		resp, err := a.http.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, redactURLError(err))
+			return nil, fmt.Errorf("%w: %w", domain.ErrBackendUnavailable, redactURLError(err))
 		}
 		defer resp.Body.Close()
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSABResponse))
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", domain.ErrBackendUnavailable, err)
+			return nil, fmt.Errorf("%w: %w", domain.ErrBackendUnavailable, err)
 		}
 		var out sabResponse
 		jsonErr := json.Unmarshal(raw, &out)
@@ -132,7 +132,7 @@ func (a *Adapter) sabDo(ctx context.Context, params url.Values, body io.Reader, 
 		case resp.StatusCode >= 300:
 			return nil, fmt.Errorf("%w: sab %s: HTTP %d", domain.ErrBadResponse, params.Get("mode"), resp.StatusCode)
 		case jsonErr != nil:
-			return nil, fmt.Errorf("%w: sab %s: %v", domain.ErrBadResponse, params.Get("mode"), jsonErr)
+			return nil, fmt.Errorf("%w: sab %s: %w", domain.ErrBadResponse, params.Get("mode"), jsonErr)
 		}
 		return &out, nil
 	}
